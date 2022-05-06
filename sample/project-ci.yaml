@@ -1,0 +1,11 @@
+name: Continuous Integration
+on: push
+jobs:
+  standard-php-ci:
+    name: PHP CI
+    uses: "D3R/github-workflows/workflows/d3r-standard-php-ci.yaml@master"
+    secrets:
+      D3R_COMPOSER_PACKAGES_HOST: ${{ secrets.D3R_COMPOSER_PACKAGES_HOST }}
+      D3R_COMPOSER_PACKAGES_USERNAME: ${{ secrets.D3R_COMPOSER_PACKAGES_USERNAME }}
+      D3R_COMPOSER_PACKAGES_PASSWORD: ${{ secrets.D3R_COMPOSER_PACKAGES_PASSWORD }}
+      COMPOSER_GITHUB_TOKEN: ${{ secrets.COMPOSER_GITHUB_TOKEN }}

@@ -1,0 +1,170 @@
+# DO NOT EDIT
+# This file is updated automatically. Manual edits will be lost.
+#
+# For more information, see https://github.com/D3R/github-actions
+name: D3R PHP CI
+on:
+  workflow_call:
+    inputs:
+      cache_prefix:
+        description: Cache key prefix
+        required: false
+        type: string
+        default: 'd3r-php-ci'
+    secrets:
+      D3R_COMPOSER_PACKAGES_HOST:
+        description: URL for D3R the Composer package repository
+        required: true
+      D3R_COMPOSER_PACKAGES_USERNAME:
+        description: Username for the D3R Composer package repository
+        required: true
+      D3R_COMPOSER_PACKAGES_PASSWORD:
+        description: Password for the D3R Composer package repository
+        required: true
+      COMPOSER_GITHUB_TOKEN:
+        description: Access token used by Composer to authenticate with Github
+        required: true
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    strategy:
+      fail-fast: true
+    outputs:
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v2
+      - name: Generate matrix
+        id: generate-matrix
+        shell: bash
+        run: |
+          supported_php_versions=$(cat "composer.json" | jq '[.extra."php-versions" | to_entries[] | select(.value.status == "supported") | .key]')
+          experimental_jobs=$(cat "composer.json" | jq '[.extra."php-versions" | to_entries[] | select(.value.status == "experimental") | {"operating-system": "ubuntu-latest", "php-version": .key, "status": "experimental"}]')
+          actions_matrix=$(printf '{"operating-system": ["ubuntu-latest"], "php-version": %s, "status": ["supported"], "include": %s}' "$supported_php_versions" "$experimental_jobs" | jq -c .)
+          echo "::set-output name=matrix::$actions_matrix"
+  checks:
+    name: PHP ${{ matrix.php-version }} on ${{ matrix.operating-system }} (${{ matrix.status }})
+    runs-on: ${{ matrix.operating-system }}
+    needs: setup
+    continue-on-error: ${{ matrix.status != 'stable' }}
+    strategy:
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      fail-fast: true
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v2
+      - id: composer-cache
+        name: Get Composer cache directory
+        shell: bash
+        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
+      - name: Set up cache
+        uses: actions/cache@v2
+        with:
+          key: ${{ inputs.cache_prefix }}-composer-${{ hashFiles('**/composer.json') }} # TODO review this
+          path: ${{ steps.composer-cache.outputs.dir }}
+          restore-keys: ${{ inputs.cache_prefix }}-composer-
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          tools: composer:v2, phplint, phpcs, composer-require-checker, composer-unused
+      - name: Configure Composer
+        shell: bash
+        run: |
+          echo '{
+            "http-basic": {
+              "${{ secrets.D3R_COMPOSER_PACKAGES_HOST }}": {
+                "username": "${{ secrets.D3R_COMPOSER_PACKAGES_USERNAME }}",
+                "password": "${{ secrets.D3R_COMPOSER_PACKAGES_PASSWORD }}"
+              }
+            },
+            "github-oauth": {
+              "github.com": "${{ secrets.COMPOSER_GITHUB_TOKEN }}"
+            }
+          }' > auth.json
+      - name: Check Composer 2.2 compatibility
+        uses: actions/github-script@v5
+        with:
+          script: |
+            const { readFile } = require('fs').promises;
+            const composerFilePath = 'composer.json';
+            let composerJSON;
+            try {
+              const data = await readFile(composerFilePath, {
+                encoding: 'utf8',
+              });
+              composerJSON = JSON.parse(data);
+            } catch (e) {
+              core.setFailed(`Failed to read ${composerFilePath}: ${e.message}`);
+              return;
+            }
+            if (null === composerJSON || 'object' !== typeof composerJSON) {
+              core.error('Invalid file contents', {
+                file: composerFilePath,
+              });
+              return;
+            }
+            let packageType = composerJSON.type;
+            if (undefined === packageType) {
+              packageType = 'library';
+              core.warning(`Composer package type is not specified, so it is assumed to be ${packageType}`, {
+                title: 'Missing property "type"',
+                file: composerFilePath,
+              });
+            }
+            if ('project' !== packageType) {
+              return;
+            }
+            const allowPluginsDoc = 'https://getcomposer.org/doc/06-config.md#allow-plugins';
+            if (
+              'object' !== typeof composerJSON.config ||
+              null === composerJSON.config ||
+              !('allow-plugins' in composerJSON.config)
+            ) {
+              core.error(`Missing ".config.allow-plugins". For more details, see ${allowPluginsDoc}`, {
+                title: 'Missing allow-plugins configuration',
+                file: composerFilePath,
+              });
+              process.exitCode = core.ExitCode.Failure;
+              return;
+            }
+            if (true !== composerJSON.config['allow-plugins']['d3r/composer']) {
+              core.error(`Composer plugin "d3r/composer" must be allowed to run. For more details, see ${allowPluginsDoc}`, {
+                title: 'Invalid allow-plugins configuration',
+                file: composerFilePath,
+              });
+              process.exitCode = core.ExitCode.Failure;
+            }
+      - name: Install Composer dependencies
+        shell: bash
+        run: composer install --no-interaction --no-progress --prefer-dist --optimize-autoloader
+      - id: check-tool-config
+        name: Check which tools are configured
+        shell: bash
+        run: |
+          echo ::set-output name=phplint-enabled::"$(test -f .phplint.yml && echo Y)"
+          echo ::set-output name=phpcs-enabled::"$(test -f .phpcs.xml.dist -o -f phpcs.xml.dist && echo Y)"
+          echo ::set-output name=phpunit-enabled::"$(test -f phpunit.xml.dist && echo Y)"
+      - name: Run PHPLint
+        if: ${{ steps.check-tool-config.outputs.phplint-enabled == 'Y' }}
+        shell: bash
+        run: phplint
+      - name: Run PHP_CodeSniffer
+        if: ${{ steps.check-tool-config.outputs.phpcs-enabled == 'Y' }}
+        shell: bash
+        run: phpcs
+      # Disabled locally by @mrjatkin
+      # - name: Run ComposerRequireChecker
+      #   shell: bash
+      #   run: XDEBUG_MODE=off composer-require-checker check
+      # Disabled locally by @mrjatkin
+      # - name: Run composer-unused
+      #   shell: bash
+      #   run: XDEBUG_MODE=off composer-unused
+      - name: Run PHP Unit tests
+        if: ${{ steps.check-tool-config.outputs.phpunit-enabled == 'Y' }}
+        shell: bash
+        run: vendor/bin/phpunit --exclude-group noci --coverage-text
