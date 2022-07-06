@@ -3,7 +3,7 @@ on: push
 jobs:
   standard-php-ci:
     name: PHP CI
-    uses: "D3R/github-workflows/.github/workflows/d3r-standard-php-ci.yaml@master"
+    uses: "D3R/github-workflows/.github/workflows/d3r-standard-php-ci.yaml@v1"
     secrets:
       D3R_COMPOSER_PACKAGES_HOST: ${{ secrets.D3R_COMPOSER_PACKAGES_HOST }}
       D3R_COMPOSER_PACKAGES_USERNAME: ${{ secrets.D3R_COMPOSER_PACKAGES_USERNAME }}
