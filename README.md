@@ -20,7 +20,7 @@
                 "status": "supported"
             },
             "8.0": {
-                "status": "experimental",
+                "status": "experimental"
             },
             "8.1": {
                 "status": "broken",
