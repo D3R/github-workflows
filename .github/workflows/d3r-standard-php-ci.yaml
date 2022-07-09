@@ -11,6 +11,11 @@ on:
         required: false
         type: string
         default: 'd3r-php-ci'
+      debug_composer:
+        description: Whether to enable verbose output for composer
+        required: false
+        type: boolean
+        default: false
     secrets:
       D3R_COMPOSER_PACKAGES_HOST:
         description: URL for D3R the Composer package repository
@@ -139,8 +144,13 @@ jobs:
               process.exitCode = core.ExitCode.Failure;
             }
       - name: Install Composer dependencies
-        shell: bash
+        if: ${{ !inputs.debug_composer }}
         run: composer install --no-interaction --no-progress --prefer-dist --optimize-autoloader
+        shell: bash
+      - name: Install Composer dependencies with debug output
+        if: ${{ inputs.debug_composer }}
+        run: composer install --no-interaction --no-progress --prefer-dist --optimize-autoloader --verbose
+        shell: bash
       - id: check-tool-config
         name: Check which tools are configured
         shell: bash
