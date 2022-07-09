@@ -75,7 +75,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-version }}
-          tools: composer:2.2, phplint, phpcs, composer-require-checker, composer-unused
+          tools: composer:2, phplint, phpcs, composer-require-checker, composer-unused
       - name: Configure Composer
         shell: bash
         run: |
