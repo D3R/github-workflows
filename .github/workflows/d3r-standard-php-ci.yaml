@@ -156,10 +156,9 @@ jobs:
         if: ${{ steps.check-tool-config.outputs.phpcs-enabled == 'Y' }}
         shell: bash
         run: phpcs
-      # Disabled locally by @mrjatkin
-      # - name: Run ComposerRequireChecker
-      #   shell: bash
-      #   run: XDEBUG_MODE=off composer-require-checker check
+      - name: Run ComposerRequireChecker
+        shell: bash
+        run: XDEBUG_MODE=off composer-require-checker check
       # Disabled locally by @mrjatkin
       # - name: Run composer-unused
       #   shell: bash
